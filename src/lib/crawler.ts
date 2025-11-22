@@ -1,84 +1,25 @@
 import * as cheerio from "cheerio";
+import { CRAWLER_CONFIG } from "./config";
+import { normalizeUrl, resolveAbsoluteUrl } from "./urlUtils";
+import { DomainError, ValidationError } from "./errors";
 
 // A PageNode represents a single web page
 export type PageNode = {
-    url: string; // The canonical URL of the page
-    links: string[]; // Internal links discovered on this page
-    assets: string[]; // Static assets (img/script/css) discovered on this page
+    url: string;
+    links: string[];
+    assets: string[];
 };
 
-// A SiteMap is a collection of PageNodes keyed by their canonical URL
 export type SiteMap = Record<string, PageNode>;
 
 export type CrawlOptions = {
-    maxPages?: number; // Maximum number of pages to crawl
+    maxPages?: number;
 }
 
 // The result of extracting links and assets from an HTML page
 type ExtractResult = {
-    links: string[]; // The links discovered on the page
-    assets: string[]; // The assets discovered on the page
-}
-
-const ALLOWED_DOMAIN = "flintk12.com"; // The allowed domain to crawl
-const DEFAULT_MAX_PAGES = 100; // The default maximum pages to crawl, if maxPages is not provided
-const MAX_PAGES_HARD_LIMIT = 500; // Hard safety cap to avoid runaway crawls
-
-
-/**
- * Check if a hostname belongs to the allowed domain or any of its subdomains
- * @param hostname - The hostname to check
- * @returns True if the hostname belongs to the allowed domain, false otherwise
- */
-function isAllowedDomain(hostname: string): boolean {
-    // Normalize the hostname by removing www. 
-    const host = hostname.toLowerCase().replace(/^www\./, "");
-    // Check if the hostname is the allowed domain or a subdomain
-    return host === ALLOWED_DOMAIN || host.endsWith(`.${ALLOWED_DOMAIN}`);
-}
-
-
-/**
- * Normalize the URL to remove query parameters and ensure it starts with http:// or https://
- * Ensure the url belongs to the allowed domain or any of its subdomains
- * @param rawUrl - The URL to normalize
- * @returns The normalized URL or null if it is not valid
- */
-function normalizeUrl(rawUrl: string): string | null {
-    // Trim the URL to remove any leading or trailing whitespace
-    rawUrl = rawUrl.trim();
-
-    let url: URL;
-
-    try {
-        // Parse the URL to get hostname, path, etc.
-        // If rawUrl is relative, this will throw unless you supply a base.
-        // All relative URLs should be converted to absolute URLs BEFORE they reach this function.
-        url = new URL(rawUrl);
-    } catch {
-        return null; // Invalid URL
-    }
-
-    // Only accept http/https
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-        return null;
-    }
-
-    // Enforce allowed domain + subdomains
-    if (!isAllowedDomain(url.hostname)) {
-        return null; // Skip external domain
-    }
-
-    // Remove query parameters and fragments
-    url.search = "";
-    url.hash = "";
-
-    // Remove trailing slash unless it's the root
-    if (url.pathname.endsWith("/") && url.pathname !== "/") {
-        url.pathname = url.pathname.slice(0, -1);
-    }
-
-    return url.toString();
+    links: string[];
+    assets: string[];
 }
 
 /**
@@ -93,27 +34,27 @@ function isHtmlResponse(contentType: string | null): boolean {
 
 /**
  * Resolve maxPages from options:
- * - Use DEFAULT_MAX_PAGES if undefined
+ * - Use CRAWLER_CONFIG.DEFAULT_MAX_PAGES if undefined
  * - Throw on invalid values (<= 0, NaN, etc.)
- * - Clamp to MAX_PAGES_HARD_LIMIT for safety
+ * - Clamp to CRAWLER_CONFIG.MAX_PAGES_HARD_LIMIT for safety
  */
 function resolveMaxPages(options: CrawlOptions): number {
     const { maxPages } = options;
 
-    // If maxPages is not provided, use the default value
     if (maxPages === undefined) {
-        return DEFAULT_MAX_PAGES;
+        return CRAWLER_CONFIG.DEFAULT_MAX_PAGES;
     }
 
-    // If maxPages is not a finite number or is less than or equal to 0, throw an error
     if (!Number.isFinite(maxPages) || maxPages <= 0) {
-        throw new Error(`Max pages must be a positive number, got ${maxPages}`);
+        throw new ValidationError(
+            `Max pages must be a positive number, got ${maxPages}`,
+            "maxPages"
+        );
     }
 
     // Clamp the max pages to the hard limit to avoid runaway crawls
-    return Math.min(maxPages, MAX_PAGES_HARD_LIMIT);
+    return Math.min(maxPages, CRAWLER_CONFIG.MAX_PAGES_HARD_LIMIT);
 }
-
 
 /**
  * Extract the links and assets from an HTML page
@@ -130,9 +71,9 @@ function extractLinksAndAssets(pageUrl: string, html: string): ExtractResult {
     const assetSet = new Set<string>();
 
     // Extract links from the page
-    $("a[href]").each((_, el) => { // Find all <a> tags with href attributes
+    $("a[href]").each((_, el) => {
         const href = $(el).attr("href");
-        if (!href) return; // Skip if no href attribute
+        if (!href) return;
 
         if (
             href.startsWith("#") || // Skip anchors
@@ -143,73 +84,60 @@ function extractLinksAndAssets(pageUrl: string, html: string): ExtractResult {
             return;
         }
 
-        // Turn relative URL into absolute using the pageUrl as base.
-        let absoluteUrl: string;
-        try {
-            absoluteUrl = new URL(href, pageUrl).toString();
-        } catch {
+        const absoluteUrl = resolveAbsoluteUrl(href, pageUrl);
+        if (!absoluteUrl) {
             return; // Skip invalid URL
         }
 
         const normalized = normalizeUrl(absoluteUrl);
         if (normalized) {
-            linkSet.add(normalized); // Add the normalized URL to the linkSet
+            linkSet.add(normalized);
         }
     });
 
     // Extract scripts from the page
-    $("script[src]").each((_, el) => { // Find all <script> tags with src attributes
+    $("script[src]").each((_, el) => {
         const src = $(el).attr("src");
-        if (!src) return; // Skip if no src attribute
+        if (!src) return;
 
-        try {
-            // Turn relative URL into absolute using the pageUrl as base.
-            const absoluteUrl = new URL(src, pageUrl).toString();
-            // Add the absolute URL to the assetSet.
-            // We are not normalizing the URL here because scripts are typically not normalized.
-            assetSet.add(absoluteUrl);
-        } catch {
+        const absoluteUrl = resolveAbsoluteUrl(src, pageUrl);
+        if (!absoluteUrl) {
             return; // Skip invalid URL
         }
+        // We are not normalizing the URL here because scripts are typically not normalized.
+        assetSet.add(absoluteUrl);
     });
 
     // Extract images from the page
-    $("img[src]").each((_, el) => { // Find all <img> tags with src attributes
+    $("img[src]").each((_, el) => {
         const src = $(el).attr("src");
-        if (!src) return; // Skip if no src attribute
+        if (!src) return;
 
-        try {
-            // Turn relative URL into absolute using the pageUrl as base.
-            const absoluteUrl = new URL(src, pageUrl).toString();
-            // Add the absolute URL to the assetSet.
-            // We are not normalizing the URL here because images are typically not normalized.
-            assetSet.add(absoluteUrl);
-        } catch {
+        const absoluteUrl = resolveAbsoluteUrl(src, pageUrl);
+        if (!absoluteUrl) {
             return; // Skip invalid URL
         }
+        // We are not normalizing the URL here because images are typically not normalized.
+        assetSet.add(absoluteUrl);
     });
 
     // Extract CSS links from the page
-    $('link[rel="stylesheet"][href]').each((_, el) => { // Find all <link> tags with rel="stylesheet" and href attributes
+    $('link[rel="stylesheet"][href]').each((_, el) => {
         const href = $(el).attr("href");
-        if (!href) return; // Skip if no href attribute
+        if (!href) return;
 
-        try {
-            // Turn relative URL into absolute using the pageUrl as base.
-            const absoluteUrl = new URL(href, pageUrl).toString();
-            // Add the absolute URL to the assetSet.
-            // We are not normalizing the URL here because CSS links are typically not normalized.
-            assetSet.add(absoluteUrl);
-        } catch {
+        const absoluteUrl = resolveAbsoluteUrl(href, pageUrl);
+        if (!absoluteUrl) {
             return; // Skip invalid URL
         }
+        // We are not normalizing the URL here because CSS links are typically not normalized.
+        assetSet.add(absoluteUrl);
     });
 
-    // Deterministic ordering
+    // Make sure the links and assets are in a deterministic order
     const links = Array.from(linkSet).sort();
     const assets = Array.from(assetSet).sort();
 
-    // Return the links and assets in a deterministic order
     return { links, assets };
 }
 
@@ -220,18 +148,16 @@ function extractLinksAndAssets(pageUrl: string, html: string): ExtractResult {
  * @returns A promise that resolves to the site map
  */
 export async function crawl(startUrl: string, options: CrawlOptions = {}): Promise<SiteMap> {
-    // Normalize the start URL and throw if it is invalid / out-of-domain
+    // Normalize the start URL and throw if it is invalid or out-of-domain
     const normalizedStart = normalizeUrl(startUrl);
     if (!normalizedStart) {
-        throw new Error(
-            `Starting URL must belong to domain ${ALLOWED_DOMAIN}, got: ${startUrl}`
+        throw new DomainError(
+            `Starting URL must belong to domain ${CRAWLER_CONFIG.ALLOWED_DOMAIN}`,
+            startUrl
         );
     }
-
-    // Resolve the maximum number of pages to crawl
     const maxPages = resolveMaxPages(options);
 
-    // Initialize the site map, visited set, and queue for BFS traversal
     const siteMap: SiteMap = {};
     const visited = new Set<string>();
     const queue: string[] = [];
@@ -242,14 +168,13 @@ export async function crawl(startUrl: string, options: CrawlOptions = {}): Promi
     let pagesCrawled = 0;
 
     while (queue.length > 0 && pagesCrawled < maxPages) {
-        // Dequeue the next URL to crawl
-        const currentUrl = queue.shift()!; // This will not be undefined because we check queue.length > 0
+        // This will not be undefined because we check queue.length > 0
+        const currentUrl = queue.shift()!;
         try {
-            // Fetch the HTML of the current URL
             const res = await fetch(currentUrl, {
                 headers: {
                     // Set a user agent to identify the crawler following good-web-citizen standards
-                    "User-Agent": "FlintCrawler/1.0 (+https://flintk12.com)"
+                    "User-Agent": CRAWLER_CONFIG.USER_AGENT
                 }
             });
 
@@ -270,18 +195,14 @@ export async function crawl(startUrl: string, options: CrawlOptions = {}): Promi
                 continue;
             }
 
-            // Extract the HTML of the current page
             const html = await res.text();
-            // Extract the links and assets from the current page
             const { links, assets } = extractLinksAndAssets(finalUrl, html);
-            // Add the current page to the site map with its links and assets
             siteMap[finalUrl] = {
                 url: finalUrl,
                 links,
                 assets
             };
 
-            // Enqueue unseen internal links in deterministic order
             for (const link of links) {
                 if (!visited.has(link)) {
                     visited.add(link);

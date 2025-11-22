@@ -5,14 +5,13 @@ import React, { useState } from "react";
 
 import type {
   CrawlSuccessResponse,
-  CrawlErrorResponse,
   CrawlResponse,
-} from "@/lib/crawlTypes"
+} from "@/lib/crawlTypes";
+import { CRAWLER_CONFIG } from "@/lib/config";
 
-// The main component for the home page
 export default function HomePage() {
-  // These useState calls are how you store form values, loading state, errors, and API results in a React component
-  // When you call the setSomething functions, React re-renders the component with the new values, and the UI updates on screen
+  // These useState calls are how we store form values, loading state, errors, and API results in a React component
+  // When we call the setSomething functions, React re-renders the component with the new values, and the UI updates on screen
   const [url, setUrl] = useState("https://www.flintk12.com");
   const [maxPages, setMaxPages] = useState("10");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -20,42 +19,32 @@ export default function HomePage() {
   const [result, setResult] = useState<CrawlSuccessResponse | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
-    // Prevent the default form submission behavior
     e.preventDefault();
     setStatus("loading");
     setErrorMessage(null);
     setResult(null);
 
     try {
-      // Create the request body
       const body: { url: string; maxPages?: number } = { url: url.trim() };
       const parsedMaxPages = Number(maxPages);
-      // If the max pages is a valid number and is greater than 0, add it to the request body
       if (!Number.isNaN(parsedMaxPages) && parsedMaxPages > 0) {
         body.maxPages = parsedMaxPages;
       }
 
-      // Fetch the API endpoint
       const res = await fetch("/api/crawl", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
-      // Parse the response body as JSON
       const data = (await res.json()) as CrawlResponse;
-      // If the response is not OK or the data has an error property, throw an error
       if (!res.ok || "error" in data) {
-        // If the data has an error property, throw an error with the error message
-        // Otherwise, throw an error with the status code
         throw new Error(
           "error" in data ? data.error : `Request failed with status ${res.status}`
         );
       }
 
-      // Set the result to the data
-      setResult(data); // TypeScript knows data is CrawlSuccessResponse here
-      // Set the status to success
+      setResult(data);
       setStatus("success");
     } catch (err) {
       let message = "Something went wrong.";
@@ -111,7 +100,7 @@ export default function HomePage() {
               <input
                 type="number"
                 min={1}
-                max={500}
+                max={CRAWLER_CONFIG.MAX_PAGES_HARD_LIMIT}
                 value={maxPages}
                 onChange={(e) => setMaxPages(e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -133,9 +122,9 @@ export default function HomePage() {
 
           {/* This is the status and error section that displays the status and error messages */}
           <div className="mt-3 text-sm">
-            {status === "idle" && (
+            {(status === "idle" || status === "success") && (
               <p className="text-gray-500">
-                Starting URL must be within <code>flintk12.com</code> (subdomains allowed). Max pages is capped at 500 to keep crawls safe and predictable.
+                Starting URL must be within <code>{CRAWLER_CONFIG.ALLOWED_DOMAIN}</code> (subdomains allowed). Max pages is capped at {CRAWLER_CONFIG.MAX_PAGES_HARD_LIMIT} to keep crawls safe and predictable.
               </p>
             )}
             {status === "loading" && (

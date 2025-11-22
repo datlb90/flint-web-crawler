@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { crawl } from "@/lib/crawler";
+import { DomainError, ValidationError } from "@/lib/errors";
 import type {
     CrawlSuccessResponse,
     CrawlErrorResponse,
@@ -18,14 +19,11 @@ type CrawlRequestBody = {
  * @returns A JSON response containing the site map
  */
 export async function POST(request: Request) {
-    // Get the start time of the crawl
     const startedAt = Date.now();
 
-    // Get the request body
     let body: CrawlRequestBody;
 
     try {
-        // Try to parse the request body as JSON
         body = await request.json();
     } catch {
         // If the request body is not valid JSON, return a 400 error
@@ -40,7 +38,6 @@ export async function POST(request: Request) {
     const { url, maxPages } = body ?? {};
 
     // Minimal shape validation (type/required checks)
-    // If the URL is not a string or is an empty string, return a 400 error 
     if (typeof url !== "string" || url.trim().length === 0) {
         // Return a 400 error with a message
         return NextResponse.json(
@@ -49,7 +46,6 @@ export async function POST(request: Request) {
         );
     }
 
-    // If the max pages is provided and is not a number, return a 400 error
     if (maxPages !== undefined && typeof maxPages !== "number") {
         // Return a 400 error with a message
         return NextResponse.json(
@@ -64,45 +60,30 @@ export async function POST(request: Request) {
         const elapsedMs = Date.now() - startedAt;
         const pagesCrawled = Object.keys(siteMap).length;
 
-        // Create the payload for the success response
         const successPayload: CrawlSuccessResponse = {
             siteMap,
             stats: { pagesCrawled, elapsedMs },
         };
 
-        // Return the success response
         return NextResponse.json<CrawlSuccessResponse>(successPayload, { status: 200 });
 
     } catch (err) {
-        // Handle errors and map them to user-friendly messages
-        let message = "Unknown error";
-        // If the error is an instance of Error, set the message to the error message
-        if (err instanceof Error) {
-            message = err.message;
-        } else if (typeof err === "string") {
-            message = err;
-        }
-
-        // Map known "bad input" errors to 400
-        const isInputError =
-            message.includes("Starting URL must belong to domain") ||
-            message.includes("Max pages must be a positive number");
-
-        if (isInputError) {
+        // Handle domain and validation errors as 400 Bad Request
+        if (err instanceof DomainError || err instanceof ValidationError) {
             return NextResponse.json(
-                { error: message },
+                { error: err.message },
                 { status: 400 }
             );
         }
 
+        // Handle unexpected errors as 500 Internal Server Error
+        const message = err instanceof Error ? err.message : "Unknown error";
         console.error("Crawl failed:", message, err);
 
-        // Create the payload for the error response
         const errorPayload: CrawlErrorResponse = {
             error: "Unexpected error while crawling. Please try again later or with a different URL.",
         };
 
-        // Return the error response
         return NextResponse.json<CrawlErrorResponse>(errorPayload, { status: 500 });
     }
 }
