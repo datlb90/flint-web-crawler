@@ -10,6 +10,7 @@ import type {
 type CrawlRequestBody = {
     url?: string; // Making this optional is a reminder that this is untrusted input
     maxPages?: number; // The maximum number of pages to crawl, if not provided, the default value will be used
+    allowedDomain?: string; // Optional allowed domain (defaults to config)
 };
 
 /**
@@ -26,20 +27,15 @@ export async function POST(request: Request) {
     try {
         body = await request.json();
     } catch {
-        // If the request body is not valid JSON, return a 400 error
         return NextResponse.json(
             { error: "Invalid JSON body." },
             { status: 400 }
         );
     }
 
-    // Destructure URL and maxPages from the request body.
-    // If body is null/undefined, fall back to an empty object.
-    const { url, maxPages } = body ?? {};
+    const { url, maxPages, allowedDomain } = body ?? {};
 
-    // Minimal shape validation (type/required checks)
     if (typeof url !== "string" || url.trim().length === 0) {
-        // Return a 400 error with a message
         return NextResponse.json(
             { error: 'Field "url" is required and must be a non-empty string.' },
             { status: 400 }
@@ -47,16 +43,22 @@ export async function POST(request: Request) {
     }
 
     if (maxPages !== undefined && typeof maxPages !== "number") {
-        // Return a 400 error with a message
         return NextResponse.json(
             { error: '"maxPages" must be a number if provided.' },
             { status: 400 }
         );
     }
 
+    if (allowedDomain !== undefined && typeof allowedDomain !== "string") {
+        return NextResponse.json(
+            { error: '"allowedDomain" must be a string if provided.' },
+            { status: 400 }
+        );
+    }
+
     try {
         // Let the crawler own the real validation (domain + maxPages rules)
-        const siteMap = await crawl(url, { maxPages });
+        const siteMap = await crawl(url, { maxPages, allowedDomain });
         const elapsedMs = Date.now() - startedAt;
         const pagesCrawled = Object.keys(siteMap).length;
 

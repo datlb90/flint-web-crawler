@@ -21,7 +21,7 @@ The crawler must:
 
 ## Constraints & Assumptions
 
-- Domain-scoped only: Only crawl links belonging to the flintk12.com domain or any of its subdomains. External links are ignored entirely, and redirects that end outside this domain are skipped.
+- Domain-scoped only: Only crawl links belonging to the configured domain (defaults to flintk12.com) or any of its subdomains. The allowed domain can be configured per-crawl via `CrawlOptions.allowedDomain`. External links are ignored entirely, and redirects that end outside the allowed domain are skipped.
 
 - Static HTML only: The crawler fetches HTML responses and parses the DOM. It does not execute JavaScript or render client-side navigation.
 
@@ -32,7 +32,7 @@ The crawler must:
     - The crawler processes pages sequentially, so the order in which pages are discovered is always the same.
     - Multiple URLs can refer to the same page. Normalization ensures they map to a single canonical URL, preventing accidental duplication.
 
-- Max pages is an upper bound, not a target: The crawler stops when either the page limit is reached **or** there are no more eligible pages left in the queue. A page is only counted if it is within `flintk12.com`, responds successfully, and returns HTML content. Error responses, non-HTML content, out-of-domain URLs, and duplicates (after normalization) are skipped and not counted toward the page total.
+- Max pages is an upper bound, not a target: The crawler stops when either the page limit is reached **or** there are no more eligible pages left in the queue. A page is only counted if it is within the allowed domain (configurable, defaults to `flintk12.com`), responds successfully, and returns HTML content. Error responses, non-HTML content, out-of-domain URLs, and duplicates (after normalization) are skipped and not counted toward the page total.
 
 - Graceful error handling: 404s, 500s, network errors, and non-HTML content are skipped safely.
 
@@ -56,7 +56,7 @@ Located in `src/app/page.tsx`, this component provides:
 
 **2. API Route `POST /api/crawl`**
 
-Implemented in `src/app/api/crawl/route.ts`, responsible for
+Implemented in `src/app/api/crawl/route.ts`, responsible for:
 
 - Validating inputs.
 
@@ -64,29 +64,68 @@ Implemented in `src/app/api/crawl/route.ts`, responsible for
 
 - Structuring and returning the JSON response.
 
-- Mapping errors to user-friendly messages.
+- Mapping errors to user-friendly messages using custom error classes for type-safe error handling.
 
-**3. Core Crawler `src/lib/crawler.ts`**
+**3. Core Crawler Module (`src/lib/crawler.ts`)**
 
 A pure TypeScript module that:
 
 - Fetches HTML from pages using `fetch` — chosen because it is a built-in, lightweight, standards-compliant HTTP client that keeps the crawler simple and dependency-free while providing a reliable API for retrieving HTML pages.
 
-- Parses HTML using `Cheerio` — selected because it is lightweight, fast, and well-suited for server-side crawling. Cheerio provides a jQuery-style API for selecting elements, works without executing JavaScript, and avoids the heavy overhead of tools like JSDOM or Puppeteer, which are unnecessary for this static HTML use case.
+- Uses an extractor interface (`IExtractor`) for parsing HTML — this abstraction allows different extraction implementations (Cheerio, JSDOM, or custom parsers) without changing crawler logic. The default `CheerioExtractor` uses Cheerio for fast, server-side HTML parsing without executing JavaScript.
 
-- Extracts: internal links and assets (`img`, `script`, `link`).
+- Extracts: internal links and assets (`img`, `script`, `link`) via the extractor interface.
 
 - Builds a graph representing the site.
 
 - Uses BFS with a visited set for safe traversal — BFS was chosen over DFS because it provides a more predictable and stable crawl order, surfaces top-level site structure earlier, and makes it easier to enforce a max-page limit. DFS can be deterministic, but small changes in page structure can cause large shifts in traversal order and deeper branch exploration.
 
+- Supports configurable domain validation — the allowed domain can be specified per-crawl via `CrawlOptions`, making it flexible for different use cases while defaulting to the configured domain.
+
 This module is intentionally isolated from Next.js for easier testing and reuse.
+
+## Module Structure
+
+The codebase is organized into focused modules for better maintainability:
+
+**`src/lib/config.ts`** — Centralized configuration
+- All crawler-related constants (domain, limits, timeouts, etc.)
+- Single source of truth for configuration values
+- Easy to modify without touching business logic
+
+**`src/lib/urlUtils.ts`** — URL-related utilities
+- `normalizeUrl()` — Normalizes URLs, removes query params/fragments, enforces domain restrictions
+- `isAllowedDomain()` — Validates hostnames against allowed domain
+- `resolveAbsoluteUrl()` — Converts relative URLs to absolute URLs
+- Reusable across the codebase, reducing duplication
+
+**`src/lib/errors.ts`** — Custom error classes
+- `DomainError` — Thrown when URLs don't belong to allowed domain
+- `ValidationError` — Thrown for invalid input (e.g., invalid maxPages)
+- `CrawlError` — For network/HTTP errors during crawling
+- Enables type-safe error handling with `instanceof` checks instead of fragile string matching
+
+**`src/lib/crawlTypes.ts`** — TypeScript type definitions
+- Shared types for API responses and data structures
+- Ensures type safety across the application
+
+**`src/lib/extractor.ts`** — Extractor interface and implementations
+- `IExtractor` interface — abstraction for HTML parsing and extraction
+- `CheerioExtractor` — default implementation using Cheerio for fast server-side parsing
+- Allows custom extractors to be plugged in without modifying crawler logic
+- Supports configurable domain validation for link normalization
+
+**`src/lib/crawler.ts`** — Core crawling logic
+- Uses the above modules for configuration, URL handling, error reporting, and extraction
+- Focused on the crawling algorithm (BFS traversal, visited tracking, queue management)
+- Accepts configurable options: `maxPages`, `extractor`, and `allowedDomain`
 
 ## Data Structures
 
 The crawler represents the website as a directed graph:
 
-```type PageNode = {
+```
+type PageNode = {
   url: string;
   links: string[];   // Internal links discovered on this page
   assets: string[];  // Static assets (img/script/css)
@@ -97,7 +136,7 @@ type SiteMap = Record<string, PageNode>;
 
 Why this structure?
 
-- `Record<string, PageNode>` gives O(1) random access
+- We chose `Record<string, PageNode>` over alternatives like `Map` (not JSON-serializable), `Array` (O(n) lookup), or nested structures (unnecessary complexity) because it provides O(1) random access for URL lookups during crawling, direct JSON serialization for API responses, a simple API (`siteMap[url]`), and natural representation of URLs as keys. 
 
 - JSON-friendly serialization
 
@@ -112,7 +151,7 @@ Why this structure?
 
 `queue: string[]`: For orderly BFS traversal.
 
-`pageLimit`: Hard stop to avoid runaway crawls.
+`maxPages`: Hard stop to avoid runaway crawls (configurable via `CRAWLER_CONFIG.MAX_PAGES_HARD_LIMIT`).
 
 ## Alternatives Considered
 
@@ -125,6 +164,10 @@ Why this structure?
 ## Extensibility & Future Improvements
 
 The current crawler is intentionally simple, but several enhancements are straightforward:
+
+- **Custom extractors**: Implement the `IExtractor` interface to create custom extraction logic (e.g., regex-based, JSDOM, or specialized parsers). Pass your extractor via `CrawlOptions.extractor`.
+
+- **Configurable domain**: Use `CrawlOptions.allowedDomain` to crawl different domains per request, making the crawler reusable across multiple sites.
 
 - Parallel/concurrent fetching
 
@@ -149,19 +192,21 @@ The current crawler is intentionally simple, but several enhancements are straig
 
 - External links
 
-- Query parameter normalization
+- Query parameter normalization (via `normalizeUrl()`)
 
-- Cyclic links
+- Cyclic links (prevented by `visited` Set)
 
 - HTTP errors
 
 - Non-HTML content
 
-- Enforced page limit
+- Enforced page limit (configurable, with hard cap)
 
 - Broken HTML or missing tags
 
-The crawler uses graceful failure handling to ensure predictable behavior.
+- Type-safe error handling using custom error classes (`DomainError`, `ValidationError`)
+
+The crawler uses graceful failure handling to ensure predictable behavior. Errors are handled with custom error classes that provide type safety and better error context.
 
 ## Running the Project
 
@@ -174,4 +219,4 @@ Visit:
 ```http://localhost:3000
 ```
 
-Enter a starting URL and optional page limit, then click Crawl.
+Enter a starting URL and a max pages value, then click Crawl.
