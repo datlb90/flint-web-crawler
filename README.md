@@ -32,13 +32,15 @@ The crawler must:
     - The crawler processes pages sequentially, so the order in which pages are discovered is always the same.
     - Multiple URLs can refer to the same page. Normalization ensures they map to a single canonical URL, preventing accidental duplication.
 
+- Max pages is an upper bound, not a target: The crawler stops when either the page limit is reached **or** there are no more eligible pages left in the queue. A page is only counted if it is within `flintk12.com`, responds successfully, and returns HTML content. Error responses, non-HTML content, out-of-domain URLs, and duplicates (after normalization) are skipped and not counted toward the page total.
+
 - Graceful error handling: 404s, 500s, network errors, and non-HTML content are skipped safely.
 
 ## High-Level Architecture
 
 The application consists of three main pieces:
 
-1. Frontend (Next.js App Router)
+**1. Frontend (Next.js App Router)**
 
 Located in `src/app/page.tsx`, this component provides:
 
@@ -52,7 +54,7 @@ Located in `src/app/page.tsx`, this component provides:
 
 - Renders the final site map (pages, links, assets).
 
-2. API Route `POST /api/crawl`
+**2. API Route `POST /api/crawl`**
 
 Implemented in `src/app/api/crawl/route.ts`, responsible for
 
@@ -64,7 +66,7 @@ Implemented in `src/app/api/crawl/route.ts`, responsible for
 
 - Mapping errors to user-friendly messages.
 
-3. Core Crawler `src/lib/crawler.ts`
+**3. Core Crawler `src/lib/crawler.ts`**
 
 A pure TypeScript module that:
 

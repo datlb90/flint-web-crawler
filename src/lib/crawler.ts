@@ -224,7 +224,7 @@ export async function crawl(startUrl: string, options: CrawlOptions = {}): Promi
     const normalizedStart = normalizeUrl(startUrl);
     if (!normalizedStart) {
         throw new Error(
-            `Start URL must belong to domain ${ALLOWED_DOMAIN}, got: ${startUrl}`
+            `Starting URL must belong to domain ${ALLOWED_DOMAIN}, got: ${startUrl}`
         );
     }
 

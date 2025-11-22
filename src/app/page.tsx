@@ -1,65 +1,240 @@
-import Image from "next/image";
+// Bundle this component for the browser, allow hooks and interactivity
+"use client";
 
-export default function Home() {
+import React, { useState } from "react";
+
+import type {
+  CrawlSuccessResponse,
+  CrawlErrorResponse,
+  CrawlResponse,
+} from "@/lib/crawlTypes"
+
+// The main component for the home page
+export default function HomePage() {
+  // These useState calls are how you store form values, loading state, errors, and API results in a React component
+  // When you call the setSomething functions, React re-renders the component with the new values, and the UI updates on screen
+  const [url, setUrl] = useState("https://www.flintk12.com");
+  const [maxPages, setMaxPages] = useState("10");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [result, setResult] = useState<CrawlSuccessResponse | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    // Prevent the default form submission behavior
+    e.preventDefault();
+    setStatus("loading");
+    setErrorMessage(null);
+    setResult(null);
+
+    try {
+      // Create the request body
+      const body: { url: string; maxPages?: number } = { url: url.trim() };
+      const parsedMaxPages = Number(maxPages);
+      // If the max pages is a valid number and is greater than 0, add it to the request body
+      if (!Number.isNaN(parsedMaxPages) && parsedMaxPages > 0) {
+        body.maxPages = parsedMaxPages;
+      }
+
+      // Fetch the API endpoint
+      const res = await fetch("/api/crawl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      // Parse the response body as JSON
+      const data = (await res.json()) as CrawlResponse;
+      // If the response is not OK or the data has an error property, throw an error
+      if (!res.ok || "error" in data) {
+        // If the data has an error property, throw an error with the error message
+        // Otherwise, throw an error with the status code
+        throw new Error(
+          "error" in data ? data.error : `Request failed with status ${res.status}`
+        );
+      }
+
+      // Set the result to the data
+      setResult(data); // TypeScript knows data is CrawlSuccessResponse here
+      // Set the status to success
+      setStatus("success");
+    } catch (err) {
+      let message = "Something went wrong.";
+
+      if (err instanceof Error) {
+        message = err.message;
+      } else if (typeof err === "string") {
+        message = err;
+      }
+
+      setErrorMessage(message);
+      setStatus("error");
+    }
+  }
+  const isLoading = status === "loading";
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="min-h-screen bg-gray-50">
+      <div className="mx-auto max-w-5xl px-4 py-10">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">
+            Flint Web Crawler
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-2 text-sm text-gray-600">
+            Crawl pages inside <code>flintk12.com</code>, discover links, and inspect static assets.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        </header>
+
+        {/* This is the form section that contains the form for the user to input the starting URL and max pages */}
+        <section className="mb-8 rounded-lg bg-white p-4 shadow-sm">
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-4 md:flex-row md:items-end"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            <div className="flex-1">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Starting URL
+              </label>
+              <input
+                type="url"
+                required
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="https://www.flintk12.com/..."
+              />
+            </div>
+
+            <div className="w-full md:w-40">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Max pages
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={maxPages}
+                onChange={(e) => setMaxPages(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="e.g. 10"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading || !url.trim()}
+              className={`inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium text-white shadow-sm ${isLoading || !url.trim()
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700"
+                }`}
+            >
+              {isLoading ? "Crawling..." : "Crawl"}
+            </button>
+          </form>
+
+          {/* This is the status and error section that displays the status and error messages */}
+          <div className="mt-3 text-sm">
+            {status === "idle" && (
+              <p className="text-gray-500">
+                Starting URL must be within <code>flintk12.com</code> (subdomains allowed). Max pages is capped at 500 to keep crawls safe and predictable.
+              </p>
+            )}
+            {status === "loading" && (
+              <p className="text-blue-600">Crawling in progress…</p>
+            )}
+            {status === "error" && errorMessage && (
+              <p className="text-red-600">Error: {errorMessage}</p>
+            )}
+          </div>
+        </section>
+
+        {/* This is the results section that displays the summary and site map */}
+        {result && (
+          <section className="space-y-4">
+            {/* This is the summary section that displays the pages crawled, elapsed time, and unique URLs */}
+            <div className="rounded-lg bg-white p-4 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">Summary</h2>
+              <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-700">
+                <div>
+                  <span className="font-medium">Pages crawled:</span>{" "}
+                  {result.stats.pagesCrawled}
+                </div>
+                <div>
+                  <span className="font-medium">Elapsed time:</span>{" "}
+                  {result.stats.elapsedMs} ms
+                </div>
+                <div>
+                  <span className="font-medium">Unique URLs:</span>{" "}
+                  {Object.keys(result.siteMap).length}
+                </div>
+              </div>
+            </div>
+
+            {/* This is the site map section that displays the pages and their links and assets */}
+            <div className="rounded-lg bg-white p-4 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Site Map ({Object.keys(result.siteMap).length} pages)
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Click a page to view its outbound links and assets.
+              </p>
+
+              <div className="mt-3 max-h-[480px] space-y-2 overflow-auto pr-1">
+                {/* This is the loop that displays the pages and their links and assets */}
+                {Object.values(result.siteMap).map((page) => (
+                  <details
+                    key={page.url}
+                    className="rounded-md border border-gray-200 bg-gray-50 p-3"
+                  >
+                    <summary className="cursor-pointer text-sm font-medium text-blue-700">
+                      {page.url}
+                    </summary>
+
+                    <div className="mt-2 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase text-gray-500">
+                          Internal Links ({page.links.length})
+                        </h3>
+                        {page.links.length === 0 ? (
+                          <p className="mt-1 text-xs text-gray-400">
+                            No internal links discovered.
+                          </p>
+                        ) : (
+                          <ul className="mt-1 space-y-1 text-xs text-gray-700">
+                            {page.links.map((link, idx) => (
+                              <li key={idx} className="break-all">
+                                {link}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase text-gray-500">
+                          Assets ({page.assets.length})
+                        </h3>
+                        {page.assets.length === 0 ? (
+                          <p className="mt-1 text-xs text-gray-400">
+                            No assets discovered.
+                          </p>
+                        ) : (
+                          <ul className="mt-1 space-y-1 text-xs text-gray-700">
+                            {page.assets.map((asset, idx) => (
+                              <li key={idx} className="break-all">
+                                {asset}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+    </main>
   );
 }

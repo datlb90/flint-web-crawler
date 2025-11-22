@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { crawl } from "@/lib/crawler";
+import type {
+    CrawlSuccessResponse,
+    CrawlErrorResponse,
+} from "@/lib/crawlTypes";
 
 // The request body for the crawl API
 type CrawlRequestBody = {
@@ -57,20 +61,17 @@ export async function POST(request: Request) {
     try {
         // Let the crawler own the real validation (domain + maxPages rules)
         const siteMap = await crawl(url, { maxPages });
-
         const elapsedMs = Date.now() - startedAt;
         const pagesCrawled = Object.keys(siteMap).length;
 
-        return NextResponse.json(
-            {
-                siteMap,
-                stats: {
-                    pagesCrawled,
-                    elapsedMs
-                }
-            },
-            { status: 200 }
-        );
+        // Create the payload for the success response
+        const successPayload: CrawlSuccessResponse = {
+            siteMap,
+            stats: { pagesCrawled, elapsedMs },
+        };
+
+        // Return the success response
+        return NextResponse.json<CrawlSuccessResponse>(successPayload, { status: 200 });
 
     } catch (err) {
         // Handle errors and map them to user-friendly messages
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
 
         // Map known "bad input" errors to 400
         const isInputError =
-            message.includes("Start URL must belong to domain") ||
+            message.includes("Starting URL must belong to domain") ||
             message.includes("Max pages must be a positive number");
 
         if (isInputError) {
@@ -96,11 +97,12 @@ export async function POST(request: Request) {
 
         console.error("Crawl failed:", message, err);
 
-        return NextResponse.json(
-            {
-                error: "Unexpected error while crawling. Please try again later or with a different URL."
-            },
-            { status: 500 }
-        );
+        // Create the payload for the error response
+        const errorPayload: CrawlErrorResponse = {
+            error: "Unexpected error while crawling. Please try again later or with a different URL.",
+        };
+
+        // Return the error response
+        return NextResponse.json<CrawlErrorResponse>(errorPayload, { status: 500 });
     }
 }
