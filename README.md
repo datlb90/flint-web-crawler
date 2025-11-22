@@ -8,7 +8,7 @@ The goal is to build a crawler that, starting from a user-provided URL on flintk
 
 The crawler must:
 
-- Stay strictly inside the flintk12.com domain.
+- Stay strictly inside the flintk12.com domain and its subdomains.
 
 - Avoid following any external links (e.g., social media).
 
@@ -21,7 +21,7 @@ The crawler must:
 
 ## Constraints & Assumptions
 
-- Domain-scoped only: Links outside flintk12.com are ignored entirely.
+- Domain-scoped only: Only crawl links belonging to the flintk12.com domain or any of its subdomains. External links are ignored entirely, and redirects that end outside this domain are skipped.
 
 - Static HTML only: The crawler fetches HTML responses and parses the DOM. It does not execute JavaScript or render client-side navigation.
 
@@ -143,7 +143,7 @@ The current crawler is intentionally simple, but several enhancements are straig
 
 - Invalid or unreachable URLs
 
-- Redirects (301/302)
+- Redirects (301/302): skipping redirects that land on external domains
 
 - External links
 

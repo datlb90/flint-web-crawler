@@ -11,7 +11,7 @@ export type PageNode = {
 export type SiteMap = Record<string, PageNode>;
 
 export type CrawlOptions = {
-    maxPages?: number; // Maximum number of pages to crawl,
+    maxPages?: number; // Maximum number of pages to crawl
 }
 
 // The result of extracting links and assets from an HTML page
@@ -21,20 +21,26 @@ type ExtractResult = {
 }
 
 const ALLOWED_DOMAIN = "flintk12.com"; // The allowed domain to crawl
-const DEFAULT_MAX_PAGES = 100; // The default maximum number of pages to crawl if maxPages is not provided
+const DEFAULT_MAX_PAGES = 100; // The default maximum pages to crawl, if maxPages is not provided
+const MAX_PAGES_HARD_LIMIT = 500; // Hard safety cap to avoid runaway crawls
+
 
 /**
- * Normalize the hostname to remove www.
- * @param hostname - The hostname to normalize
- * @returns The normalized hostname
+ * Check if a hostname belongs to the allowed domain or any of its subdomains
+ * @param hostname - The hostname to check
+ * @returns True if the hostname belongs to the allowed domain, false otherwise
  */
-function normalizeHostname(hostname: string): string {
-    return hostname.toLowerCase().replace(/^www\./, "");
+function isAllowedDomain(hostname: string): boolean {
+    // Normalize the hostname by removing www. 
+    const host = hostname.toLowerCase().replace(/^www\./, "");
+    // Check if the hostname is the allowed domain or a subdomain
+    return host === ALLOWED_DOMAIN || host.endsWith(`.${ALLOWED_DOMAIN}`);
 }
+
 
 /**
  * Normalize the URL to remove query parameters and ensure it starts with http:// or https://
- * Ensure the url belongs to the allowed domain flintk12.com
+ * Ensure the url belongs to the allowed domain or any of its subdomains
  * @param rawUrl - The URL to normalize
  * @returns The normalized URL or null if it is not valid
  */
@@ -58,9 +64,8 @@ function normalizeUrl(rawUrl: string): string | null {
         return null;
     }
 
-    // Enforce allowed domain (flintk12.com or www.flintk12.com)
-    const host = normalizeHostname(url.hostname);
-    if (host !== ALLOWED_DOMAIN) {
+    // Enforce allowed domain + subdomains
+    if (!isAllowedDomain(url.hostname)) {
         return null; // Skip external domain
     }
 
@@ -84,6 +89,29 @@ function normalizeUrl(rawUrl: string): string | null {
 function isHtmlResponse(contentType: string | null): boolean {
     if (!contentType) return false;
     return contentType.toLowerCase().includes("text/html");
+}
+
+/**
+ * Resolve maxPages from options:
+ * - Use DEFAULT_MAX_PAGES if undefined
+ * - Throw on invalid values (<= 0, NaN, etc.)
+ * - Clamp to MAX_PAGES_HARD_LIMIT for safety
+ */
+function resolveMaxPages(options: CrawlOptions): number {
+    const { maxPages } = options;
+
+    // If maxPages is not provided, use the default value
+    if (maxPages === undefined) {
+        return DEFAULT_MAX_PAGES;
+    }
+
+    // If maxPages is not a finite number or is less than or equal to 0, throw an error
+    if (!Number.isFinite(maxPages) || maxPages <= 0) {
+        throw new Error(`Max pages must be a positive number, got ${maxPages}`);
+    }
+
+    // Clamp the max pages to the hard limit to avoid runaway crawls
+    return Math.min(maxPages, MAX_PAGES_HARD_LIMIT);
 }
 
 
@@ -192,22 +220,16 @@ function extractLinksAndAssets(pageUrl: string, html: string): ExtractResult {
  * @returns A promise that resolves to the site map
  */
 export async function crawl(startUrl: string, options: CrawlOptions = {}): Promise<SiteMap> {
-    if (!startUrl) {
-        throw new Error("startUrl is required");
-    }
-
-    // Get the maximum number of pages to crawl
-    const maxPages = options.maxPages && options.maxPages > 0
-        ? options.maxPages
-        : DEFAULT_MAX_PAGES; // Use the default value if not provided
-
-    // Normalize the start URL
+    // Normalize the start URL and throw if it is invalid / out-of-domain
     const normalizedStart = normalizeUrl(startUrl);
     if (!normalizedStart) {
         throw new Error(
             `Start URL must belong to domain ${ALLOWED_DOMAIN}, got: ${startUrl}`
         );
     }
+
+    // Resolve the maximum number of pages to crawl
+    const maxPages = resolveMaxPages(options);
 
     // Initialize the site map, visited set, and queue for BFS traversal
     const siteMap: SiteMap = {};
@@ -234,7 +256,12 @@ export async function crawl(startUrl: string, options: CrawlOptions = {}): Promi
             // Get final normalized URL since fetch may redirect to a different URL
             const finalUrl = normalizeUrl(res.url);
             if (!finalUrl) {
-                continue; // Skip if final URL is not within flintk12.com
+                continue; // Skip if final URL is not within the allowed domain
+            }
+
+            // Make sure the final URL is also treated as visited
+            if (!visited.has(finalUrl)) {
+                visited.add(finalUrl);
             }
 
             const contentType = res.headers.get("content-type");
