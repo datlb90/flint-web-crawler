@@ -242,13 +242,15 @@ The crawler uses graceful failure handling to ensure predictable behavior. Error
 
 ## Running the Project
 
-```npm install
+```
+npm install
 npm run dev
 ```
 
 Visit:
 
-```http://localhost:3000
+```
+http://localhost:3000
 ```
 
 Enter a starting URL and a max pages value, then click Crawl.
