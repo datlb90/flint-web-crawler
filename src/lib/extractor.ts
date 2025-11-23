@@ -1,9 +1,7 @@
 import * as cheerio from "cheerio";
 import { normalizeUrl, resolveAbsoluteUrl } from "./urlUtils";
 
-/**
- * Result of extracting links and assets from an HTML page
- */
+// Result of extracting links and assets from an HTML page
 export type ExtractResult = {
     links: string[];
     assets: string[];
@@ -31,12 +29,14 @@ export interface IExtractor {
  */
 export class CheerioExtractor implements IExtractor {
     extract(pageUrl: string, html: string, allowedDomain?: string): ExtractResult {
+        // Parses the raw HTML string into a DOM-like structure
+        // Allows us to use jQuery-style selectors to find elements
         const $ = cheerio.load(html);
 
         const linkSet = new Set<string>();
         const assetSet = new Set<string>();
 
-        // Extract links from <a> tags
+        // Extract links from the page
         $("a[href]").each((_, el) => {
             const href = $(el).attr("href");
             if (!href) return;
@@ -60,36 +60,38 @@ export class CheerioExtractor implements IExtractor {
             }
         });
 
-        // Extract scripts
+        // Extract scripts from the page
         $("script[src]").each((_, el) => {
             const src = $(el).attr("src");
             if (!src) return;
 
             const absoluteUrl = resolveAbsoluteUrl(src, pageUrl);
             if (absoluteUrl) {
-                // Assets are not normalized to preserve query parameters and fragments
+                // Scripts are not normalized to preserve query parameters and fragments
                 assetSet.add(absoluteUrl);
             }
         });
 
-        // Extract images
+        // Extract images from the page
         $("img[src]").each((_, el) => {
             const src = $(el).attr("src");
             if (!src) return;
 
             const absoluteUrl = resolveAbsoluteUrl(src, pageUrl);
             if (absoluteUrl) {
+                // Images are not normalized to preserve query parameters and fragments
                 assetSet.add(absoluteUrl);
             }
         });
 
-        // Extract CSS stylesheets
+        // Extract CSS links from the page
         $('link[rel="stylesheet"][href]').each((_, el) => {
             const href = $(el).attr("href");
             if (!href) return;
 
             const absoluteUrl = resolveAbsoluteUrl(href, pageUrl);
             if (absoluteUrl) {
+                // CSS stylesheets are not normalized to preserve query parameters and fragments
                 assetSet.add(absoluteUrl);
             }
         });

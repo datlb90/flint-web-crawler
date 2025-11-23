@@ -85,21 +85,18 @@ export async function crawl(startUrl: string, options: CrawlOptions = {}): Promi
 
     while (queue.length > 0 && pagesCrawled < maxPages) {
         const currentUrl = queue.shift()!;
+
         try {
             const res = await fetch(currentUrl, {
-                headers: {
-                    "User-Agent": CRAWLER_CONFIG.USER_AGENT
-                }
+                headers: { "User-Agent": CRAWLER_CONFIG.USER_AGENT }
             });
-
+            // Normalize the final URL because fetch may redirect to a different URL
             const finalUrl = normalizeUrl(res.url, allowedDomain);
             if (!finalUrl) {
                 continue;
             }
 
-            if (!visited.has(finalUrl)) {
-                visited.add(finalUrl);
-            }
+            visited.add(finalUrl);
 
             const contentType = res.headers.get("content-type");
             if (!res.ok || !isHtmlResponse(contentType)) {
@@ -108,22 +105,24 @@ export async function crawl(startUrl: string, options: CrawlOptions = {}): Promi
 
             const html = await res.text();
             const { links, assets } = extractor.extract(finalUrl, html, allowedDomain);
-            siteMap[finalUrl] = {
-                url: finalUrl,
-                links,
-                assets
-            };
+
+            siteMap[finalUrl] = { url: finalUrl, links, assets };
 
             for (const link of links) {
-                if (!visited.has(link)) {
-                    visited.add(link);
-                    queue.push(link);
+                // Normalize link for consistency and to prevent duplicate crawls
+                const normalizedLink = normalizeUrl(link, allowedDomain);
+                if (normalizedLink && !visited.has(normalizedLink)) {
+                    visited.add(normalizedLink);
+                    queue.push(normalizedLink);
                 }
             }
 
             pagesCrawled++;
         } catch (err) {
             console.error(`Failed to crawl ${currentUrl}:`, err);
+            // TODO: Tracking failed URLs separately
+            // TODO: Providing retry logic
+            // TODO: Exposing failure statistics
         }
     }
 

@@ -6,11 +6,10 @@ import type {
     CrawlErrorResponse,
 } from "@/lib/crawlTypes";
 
-// The request body for the crawl API
 type CrawlRequestBody = {
-    url?: string; // Making this optional is a reminder that this is untrusted input
-    maxPages?: number; // The maximum number of pages to crawl, if not provided, the default value will be used
-    allowedDomain?: string; // Optional allowed domain (defaults to config)
+    url?: string; // Untrusted user input
+    maxPages?: number;
+    allowedDomain?: string;
 };
 
 /**
@@ -66,7 +65,6 @@ export async function POST(request: Request) {
             siteMap,
             stats: { pagesCrawled, elapsedMs },
         };
-
         return NextResponse.json<CrawlSuccessResponse>(successPayload, { status: 200 });
 
     } catch (err) {
@@ -77,7 +75,6 @@ export async function POST(request: Request) {
                 { status: 400 }
             );
         }
-
         // Handle unexpected errors as 500 Internal Server Error
         const message = err instanceof Error ? err.message : "Unknown error";
         console.error("Crawl failed:", message, err);

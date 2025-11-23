@@ -23,8 +23,25 @@ export function isAllowedDomain(
  * @returns The absolute URL as a string, or null if the URL is invalid
  */
 export function resolveAbsoluteUrl(href: string, baseUrl: string): string | null {
+  // Validate input: check for obviously invalid patterns
+  // URLs with unencoded spaces are invalid
+  if (href.includes(" ") && !href.includes("%20")) {
+    return null;
+  }
+
+  // Check for malformed protocol patterns like "://invalid"
+  if (href.startsWith("://")) {
+    return null;
+  }
+
   try {
-    return new URL(href, baseUrl).toString();
+    const resolved = new URL(href, baseUrl);
+    // Additional validation: ensure the resolved URL is actually valid
+    // Check if the resolved URL has a valid protocol
+    if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+      return null;
+    }
+    return resolved.toString();
   } catch {
     return null; // Invalid URL
   }
@@ -48,7 +65,7 @@ export function normalizeUrl(
 
   try {
     // Parse the URL to get hostname, path, etc.
-    // If rawUrl is relative, this will throw unless you supply a base.
+    // If rawUrl is relative, this will throw unless we supply a base.
     // All relative URLs should be converted to absolute URLs BEFORE they reach this function.
     url = new URL(rawUrl);
   } catch {
