@@ -18,6 +18,7 @@ class MockExtractor implements IExtractor {
     this.mockResults.set(url, result);
   }
   // Returns the predefined result for a URL, or an empty result if no result is found.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   extract(pageUrl: string, html: string, allowedDomain?: string): ExtractResult {
     return this.mockResults.get(pageUrl) || { links: [], assets: [] };
   }
