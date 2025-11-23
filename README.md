@@ -248,7 +248,8 @@ npm run dev
 
 Visit:
 
-```http://localhost:3000
+```
+http://localhost:3000
 ```
 
 Enter a starting URL and a max pages value, then click Crawl.
